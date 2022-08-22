@@ -1,0 +1,2 @@
+model_name,batch_size,device,n_times,elapsed
+deeplabv3plus_mobileones1,4,cuda,32,1.7673490849992959

@@ -3,13 +3,12 @@
 # Copyright (C) 2022 Apple Inc. All Rights Reserved.
 #
 # modified https://github.com/apple/ml-mobileone
-from typing import Optional, List, Tuple
-
 import copy
+from typing import List, Optional, Tuple
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-
 
 __all__ = ["MobileOne", "mobileone", "reparameterize_model"]
 
