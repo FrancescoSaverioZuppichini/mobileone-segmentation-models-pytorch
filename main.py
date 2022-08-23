@@ -1,10 +1,11 @@
 from typing import List, Optional
 
-from segmentation_models_pytorch.base import (ClassificationHead,
-                                              SegmentationHead,
-                                              SegmentationModel)
-from segmentation_models_pytorch.decoders.deeplabv3.decoder import \
-    DeepLabV3PlusDecoder
+from segmentation_models_pytorch.base import (
+    ClassificationHead,
+    SegmentationHead,
+    SegmentationModel,
+)
+from segmentation_models_pytorch.decoders.deeplabv3.decoder import DeepLabV3PlusDecoder
 from segmentation_models_pytorch.encoders._base import EncoderMixin
 from torch import nn
 
