@@ -121,5 +121,5 @@ if __name__ == "__main__":
     reparameterize_model(model.encoder.model)
 
     with torch.no_grad():
-        x = torch.randn((1, 3, 224, 224))
+        x = torch.randn((1, 3, 512, 512))
         print(model(x).shape)

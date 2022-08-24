@@ -10,7 +10,7 @@ from torchinfo import summary
 
 from main import DeepLabV3Plus, MobileOne, MobileOneSMPAdapter
 from mobileone import PARAMS, reparameterize_model
-
+from tqdm import tqdm
 
 def deeplabv3plus_mobileones1():
     mobileone_s1 = MobileOne(**PARAMS["s1"])
@@ -19,7 +19,7 @@ def deeplabv3plus_mobileones1():
     # have no idea what this thing does
     encoder.make_dilated(output_stride=16)
     # create our deep lab v3 +
-    model = DeepLabV3Plus(encoder=encoder, in_channels=3, classes=1000).float().eval()
+    model = DeepLabV3Plus(encoder=encoder, in_channels=3, classes=100).float().eval()
     # reparameterize
     model.encoder.model = reparameterize_model(model.encoder.model)
 
@@ -29,7 +29,7 @@ def deeplabv3plus_mobileones1():
 def deeplabv3plus_mobilenetv2():
     return (
         smp.DeepLabV3Plus(
-            "mobilenet_v2", encoder_weights=None, in_channels=3, classes=1000
+            "mobilenet_v2", encoder_weights=None, in_channels=3, classes=100
         )
         .float()
         .eval()
@@ -62,10 +62,11 @@ def benchmark(model, bach_size: int = 4, device: str = "cuda", n_times: int = 8)
         if device == "cuda":
             torch.cuda.synchronize()
         # warmup
-        for _ in range(8):
+        for _ in range(4):
             model(x)
         times = []
         for _ in range(n_times):
+            print('.', end='')
             start = perf_counter()
             model(x)
             times.append(perf_counter() - start)
@@ -76,11 +77,13 @@ def benchmark(model, bach_size: int = 4, device: str = "cuda", n_times: int = 8)
 
 def export_to_onnx(model, onnx_filename):
     x = torch.randn((1, 3, 512, 512))
+    scripted_model = torch.jit.trace(model,  x)
     torch.onnx.export(
-        model,
+        scripted_model,
         x,
         onnx_filename,
         do_constant_folding=True,
+        # opset_version=11,
         input_names=["input"],
         output_names=["output"],
         dynamic_axes={"input": {0: "batch_size"}, "output": {0: "batch_size"}},
@@ -93,19 +96,30 @@ def benchmark_onnx(
     import onnxruntime as ort
 
     sess_options = ort.SessionOptions()
+    # sess_options.enable_profiling = True
+    # ort.set_default_logger_severity(0)
     sess_options.graph_optimization_level = ort.GraphOptimizationLevel.ORT_ENABLE_ALL
+    providers = [("CUDAExecutionProvider", {"cudnn_conv_use_max_workspace": '1'})]
+
     session = ort.InferenceSession(
-        onnx_filename, sess_options=sess_options, providers=["CUDAExecutionProvider"]
+        onnx_filename, sess_options=sess_options, providers=providers
     )
-    x = torch.randn((bach_size, 3, 512, 512)).detach().numpy()
     torch.cuda.synchronize()
+    x = torch.randn((bach_size, 3, 512, 512)).numpy()
+    # see https://onnxruntime.ai/docs/api/python/api_summary.html#data-on-device
+    x = ort.OrtValue.ortvalue_from_numpy(x, 'cuda', 0)
+    output = ort.OrtValue.ortvalue_from_shape_and_type([bach_size, 100, 512, 512], x.dtype, 'cuda', 0)  
+    io_binding = session.io_binding()
+    io_binding.bind_ortvalue_input('input', x)
+    io_binding.bind_ortvalue_output('output', output)
     # warmup
-    for _ in range(8):
-        session.run([], {"input": x})
+    for _ in range(4):
+       session.run_with_iobinding(io_binding)
     times = []
     for _ in range(n_times):
+        print('.', end='')
         start = perf_counter()
-        session.run([], {"input": x})
+        session.run_with_iobinding(io_binding)
         times.append(perf_counter() - start)
     times_t = torch.as_tensor(times)
 
@@ -117,6 +131,7 @@ def export_and_benchmark(model, model_name, *args, **kwargs):
     if not Path(f"./{onnx_filename}").exists():
         print("[INFO] exporting onnx model ...")
         export_to_onnx(model, onnx_filename)
+        print("[INFO] done!")
 
     return benchmark_onnx(onnx_filename, *args, **kwargs)
 
@@ -165,6 +180,8 @@ if __name__ == "__main__":
             "std": [std],
         }
     )
+
+    print(df)
 
     if file_path.exists():
         old_df = pd.read_csv(file_path)
